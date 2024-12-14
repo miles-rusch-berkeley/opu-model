@@ -29,11 +29,6 @@ def area_utilization(M, N, K, ml, vl, kl):
         tN = tN-rN
     util_a /= iNMK
     util_a /= (vl*ml*kl)
-    print("M, N, K", M, N, K)
-    print("ml, vl, kl", ml, vl, kl)
-    print("iNMK", iNMK)
-    print("util_a", util_a)
-
     return util_a
 
 def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op_ind, widen, width_mmu):
