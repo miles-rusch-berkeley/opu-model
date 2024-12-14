@@ -6,18 +6,34 @@ import math
 from tqdm import tqdm
 
 def area_utilization(M, N, K, ml, vl, kl):
-    rN, rM, rK = N%vl, M%ml, K%kl
-    tM, tN, tK = ml-rM, vl-rN, kl-rK
-    iM, iN, iK = math.ceil(M/ml), math.ceil(N/vl), math.ceil(K/kl)
-    util_a  = (iN-1)*(iM-1)*(iK-1)  * vl*ml*kl 
-    util_a += (iN-1)*(iM-1)         * vl*ml*tK 
-    util_a += (iN-1)*(iK-1)         * vl*tM*kl
-    util_a += (iM-1)*(iK-1)         * tN*ml*kl
-    util_a += (iN-1)                * vl*tM*tK
-    util_a += (iM-1)                * tN*ml*tK
-    util_a += (iK-1)                * tN*tM*kl
-    util_a +=                       tN*tM*tK
-    util_a /= (iN*iM*iK * ml*vl*kl)
+    """
+    average utilization of outer product array 
+    over 3 dimensional volume of partial products
+    edges and corners of volume do not fully utilize array
+    """
+    iNMK = 0
+    util_a = 0
+    tN = N
+    while tN > 0:
+        rN = min(vl, tN)
+        tM = M
+        while tM > 0:
+            rM = min(ml, tM)
+            tK = K
+            while tK > 0:
+                rK = min(kl, tK)
+                util_a += rN*rM*rK
+                tK = tK-rK
+                iNMK += 1
+            tM = tM-rM
+        tN = tN-rN
+    util_a /= iNMK
+    util_a /= (vl*ml*kl)
+    print("M, N, K", M, N, K)
+    print("ml, vl, kl", ml, vl, kl)
+    print("iNMK", iNMK)
+    print("util_a", util_a)
+
     return util_a
 
 def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op_ind, widen, width_mmu):
