@@ -15,7 +15,7 @@ In the future we plan to use RTL simulation to see how these performance metrics
 
 A a two dimensional grid of registers and multiply-accumulate (macc) units, stores partial products of a subset, or tile, of the output matrix, $C_i = A_{M,i} \times B_{i,N}$. A mesh of wires connects the macc units to columns of A and rows of B. This outer-product-centric approach to accelerating GEMM kernels encourages C to be held in accumulation registers distributed with the MACC units.
 
-![image](figures/mmu_layout.png)
+![image](figuresREADME/mmu_layout.png)
 
 Fig 1. Physical Layout of Outer Product
 
@@ -24,13 +24,13 @@ The outer product unit (OPU) can execute $NM$ MACC operations per cycle, and req
 
 The architecture provides loading tiles of A, B and C, and performing outer-product-accumulate on C.
 
-![image](figures/opu-block-dg.png)
+![image](figuresREADME/opu-block-dg.png)
 
 ## GEMM Outer Product Kernel
 
 Linear algebra libraries decompose large GEMMs into micro-kernels, such as the output stationary outer product kernel below:
 
-![image](figures/knmk-BLIS.png)
+![image](figuresREADME/knmk-BLIS.png)
 
 Decomposition of GEMM into Outer Product Micro-Kernels [1]. 
 where the register and cache tile dimensions $n_r$, $m_r$, $k_c$ correspond to our model parameters like so: $n_r=v_l$, $m_r = m_l$
@@ -60,7 +60,7 @@ where `mld` and `mst` move matrix tiles into and out of the matrix registers wit
 
 The micro-kernel is computed by calling the `opacc` instruction $k_c$ times, as shown in the above Fig. The $k_c$ iterations of micro-kernel can be reduced by introducing the parameter $k_l$, which is the number of accumulates per outer product instruction. Now A and B are tiles with inner dimension $k_l$, stored in local matrix or vector registers.
 
-If the matrices are sufficiently small we can move K to the innermost loop without overflowing our L2 and L3 cache, essentially reducing our BLAS schedule to the 2nd loop around the micro-kernel:
+If the K dimension is sufficiently small, we can store tiles $A[m_c \times K]$, $B[K \times n_c]$, and $C[m_c \times n_c]$ in cache. This allows us to choose a schedule that maximizes C-tile re-use, by moving K to the innermost loop (essentially reducing our BLAS schedule to the 3rd loop around the micro-kernel):
 ```
 for (int mo = 0; mo < M; mo += mc) {
     for (int n = 0; n < N; n += nr) {
@@ -78,7 +78,7 @@ for (int mo = 0; mo < M; mo += mc) {
         mst(c, C[m:, n:]);
 }   }   }
 ``` 
-For a 512KB L2 cache this would occur with square matrix dimensions of around 256 Bytes. For a 4MB L3 cache this would occur for dimensions around 1KB.
+For a 512KB L2 cache this would occur with square matrix dimensions of around 256 Bytes. For a 4MB L3 cache this would occur for dimensions around 1KB. Holding larger C-tiles in cache improves the reuse of DRAM loads.
 
 In the inner loop of this output stationary dataflow, $N+M$ vector elements are loaded and $NM$ MACC operations are performed. For a machine with vector length $vl=N=M$, the fraction of compute operations to memory accesses, or operational intensity, increases with the vector length of the machine, $OI = \frac{NM}{N+M}=vl$.
 
@@ -90,7 +90,7 @@ First, consider GEMM with small matrix dimensions, where A, B, and C all fit in 
 
 To hide memory latency $t_{ld}$, $p_{mem}$ threads must send memory load requests in parallel, requiring $p_{mem}$ matrix tile registers to receive the load data. A cache can be used to buffer data loaded for the next batch of GEMMs and data to be stored from the last batch of GEMMs.
 
-![image](figures/mem-block-dg.png)
+![image](figuresREADME/mem-vpu-mpu.png)
 
 If the C matrix is small enough to fit in an matrix register, then the parallel memory requests must come from independent threads, and the only opportunity for memory data reuse is in the K-dimension, because tile C will be reused K times. 
 
@@ -127,7 +127,7 @@ To keep the OPU fully utilized we need to request overlaping loads from memory. 
 
 $p_{mem}=\frac{t_{ld}+m_l}{t_{\mu k}}=\frac{t_{ld}+m_l}{k_c}$
 
-![image](figures/timing.jpg)
+![image](figuresREADME/timing.jpg)
 
 In this model we consider a range of memory latencies from local caches (1-5 cycles) to shared cache (20-50 cycles) to DRAM memory (100-300 cycles).
 
