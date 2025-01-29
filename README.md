@@ -37,7 +37,7 @@ where the register and cache tile dimensions $n_r$, $m_r$, $k_c$ correspond to o
 
 The micro kernel at the bottom of the above figure can be written as follows:  
 ```
-for (int ko = 0; ko < K; k += kc) {
+for (int ko = 0; ko < K; ko += kc) {
     // L3$ prefetch B[ko:kc,0:N]
     for (int mo = 0; mo < M; mo += mc) {
         // L2$ prefetch A[mo:mc,ko:kc]
@@ -49,7 +49,7 @@ for (int ko = 0; ko < K; k += kc) {
                 mat a = mld(A[m:mr,ko:kl]);
                 mat c = mld(C[m:mr, n:nr]);
                 for (int k = ko; k < ko+kl;  k += kl) {
-                    kl = ksetkl(k);
+                    kl = msetkl(k);
                     mat b = mld(B[k:kl,n:nr]);
                     c = opacc(c, a ,b)
             }   }
@@ -60,9 +60,10 @@ where `mld` and `mst` move matrix tiles into and out of the matrix registers wit
 
 The micro-kernel is computed by calling the `opacc` instruction $k_c$ times, as shown in the above Fig. The $k_c$ iterations of micro-kernel can be reduced by introducing the parameter $k_l$, which is the number of accumulates per outer product instruction. Now A and B are tiles with inner dimension $k_l$, stored in local matrix or vector registers.
 
-If the K dimension is sufficiently small, we can store tiles $A[m_c \times K]$, $B[K \times n_c]$, and $C[m_c \times n_c]$ in cache. This allows us to choose a schedule that maximizes C-tile re-use, by moving K to the innermost loop (essentially reducing our BLAS schedule to the 3rd loop around the micro-kernel):
+If the K dimension is sufficiently small, we can store tiles $A[m_c \times K]$, $B[K \times n_c]$, and $C[m_c \times n_c]$ in cache. This allows us to choose a schedule that maximizes C-tile re-use, by moving K to the innermost loop (essentially reducing our BLAS schedule to the 2nd loop around the micro-kernel):
 ```
 for (int mo = 0; mo < M; mo += mc) {
+    // L2$ prefetch A[mo:mc,:]
     for (int n = 0; n < N; n += nr) {
         nr = vsetvl(n);
         mat c = mzero(mc, nr);
@@ -71,7 +72,7 @@ for (int mo = 0; mo < M; mo += mc) {
                 mr = msetml(m);
                 mat a = mld(A[m:mr,ko:kl]);
                 for (int k = ko; k < ko+kl;  k += kl) {
-                    kl = ksetkl(k);
+                    kl = msetkl(k);
                     mat b = mld(B[k:kl,n:nr]);
                     c = opacc(c, a ,b)
             }   }
