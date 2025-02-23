@@ -127,19 +127,22 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_
     ms_b = kl * vlB
     md_c = ml * vlB*widen/kl**2
     mrf_bw = (c_tile + kc*(mlB + vlB))/t_eff_opacc
-    max_mrf_capacity = max_mregs*(ms_a + ms_b + c_tile)
-    mrf_capacity = num_mregs*(ms_a + ms_b + md_c)
+    max_mrf_capacity = max_mregs*c_tile
+    max_vrf_capacity = max_mregs*(ms_a + ms_b)
+    mrf_capacity = num_mregs*md_c
+    vrf_capacity = num_mregs*(ms_a + ms_b)
 
-    #macc cell area estimate in cmos gates
-    adder_cell = 20 #cmos gates
-    macc_cell = adder_cell*databits**2
-    macc_gates = vl*ml*macc_cell/kl
-    reg_cell = 20 #cmos gates
-    mrf_gates = mrf_capacity*8*reg_cell
-    opu_gates = mrf_gates + macc_gates
-    gates_vec = opu_gates/(vl*macc_cell)
-
+    #from synthesis
+    mrf_16x32_area = 5100 #um^2
+    macc8b_4x4_area =  8600 - mrf_16x32_area #um^2
+    vrf_vl256_area = (46116 + 46737 + 2*22598)/3 #um^2
+    #extrapolate synthesis results to model parameters
+    mrf_area = mrf_capacity * (mrf_16x32_area/16/4)
+    vrf_area = vrf_vl256_area/(256/8) * vlB
+    macc_area = vl*ml/kl * (macc8b_4x4_area/16)
+    opu_area = mrf_area + vrf_area + macc_area
     #compare to vector unit
+    vec_area = vrf_area + (macc8b_4x4_area/16)*vlB
     t_vec_crit = 1 + kc*ml/width_mmu
     t_uk_vec = 2*t_mem + t_vec_crit
     t_eff_opacc_vec = max(t_uk_vec, ml*t_vec_crit)
@@ -161,12 +164,12 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_
         'blas_mem_opi': blas_mem_opi,
         'mrf_bw': mrf_bw,
         
-        'mrf_gates': mrf_gates,
-        'macc_gates': macc_gates,
-        'opu_gates': opu_gates,
+        'mrf_area': mrf_area,
+        'macc_area': macc_area,
+        'opu_area': opu_area,
 
         'speedup_vec': speedup_vec,
-        'gates_vec': gates_vec,
+        'vec_area': vec_area,
     }
     return perf_specs
 
@@ -184,8 +187,8 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
                   'blas_mem_bw', 'nmk_mem_bw', 'mrf_bw', 
                   'blas_mem_opi', 'nmk_mem_opi',
                   'mrf_capacity', 'l3_blas', 'l3_nmk',
-                  'speedup_vec', 'gates_vec',
-                  'macc_gates', 'mrf_gates', 'opu_gates']
+                  'speedup_vec', 'vec_area',
+                  'macc_area', 'mrf_area', 'opu_area']
     df = pd.DataFrame(index=df_index, columns=df_columns,dtype=float)
 
     #compute performance specs
@@ -209,11 +212,11 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
 
         df.loc[idx, 'mrf_bw'] = perf_specs['mrf_bw']
         df.loc[idx, 'mrf_capacity'] = perf_specs['mrf_capacity']
-        df.loc[idx, 'mrf_gates'] = perf_specs['mrf_gates']
-        df.loc[idx, 'macc_gates'] = perf_specs['macc_gates']
-        df.loc[idx, 'opu_gates'] = perf_specs['opu_gates']
+        df.loc[idx, 'mrf_area'] = perf_specs['mrf_area']
+        df.loc[idx, 'macc_area'] = perf_specs['macc_area']
+        df.loc[idx, 'opu_area'] = perf_specs['opu_area']
         df.loc[idx, 'speedup_vec'] = perf_specs['speedup_vec']
-        df.loc[idx, 'gates_vec'] = perf_specs['gates_vec']
+        df.loc[idx, 'vec_area'] = perf_specs['vec_area']
     return df
 
 # Use `init_pm` to initialize model with desired input ranges. Defaults are scalars to allow for easy sweeping of one variable.
