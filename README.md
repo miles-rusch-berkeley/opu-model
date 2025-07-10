@@ -44,7 +44,7 @@ for (int k = 0; k < kc;  k ++) {
     c = opacc(c, a ,b)
 }
 ```
-and has a OPI=$v_l$.
+and has a OPI = $v_l$.
 
 The first loop utilizes all of the MRF tile registers by performing one micro-kernel for each tile register:
 ```
@@ -56,7 +56,7 @@ for (int m = mo; m < mo+mc; m += mr) {
         c = opacc(c, a ,b)
 }   }
 ```
-this increases the accumulator storage to $m_c v_l$ where $m_c$ is the storage available using all tile registers. Now OPI=$\frac{k_c m_c v_l}{k_c(m_c+v_l)}=\frac{m_c v_l}{m_c+v_l}$. If there are an even number of tile registers, the OPI can be increased by forming a 2x$\frac{m_c}{2}$ (instead of a 1x$m_c$ ash shown in the 1st loop of the above figure). For example, with $4n_r$ tile registers we can form a $2 n_r v_l$ x $2 n_r v_l$ tile of C, acheiving OPI = $n_r v_l$.
+this increases the accumulator storage to $m_c v_l$ where $m_c$ is the storage available using all tile registers. Now OPI = $\frac{k_c m_c v_l}{k_c(m_c+v_l)}=\frac{m_c v_l}{m_c+v_l}$. If there are an even number of tile registers, the OPI can be increased by forming a 2 x $\frac{m_c}{2}$ (instead of a 1 x $m_c$ ash shown in the 1st loop of the above figure). For example, with $4n_r$ tile registers we can form a $2 n_r v_l$ x $2 n_r v_l$ tile of C, acheiving OPI = $n_r v_l$.
 
 Similarly, the outermost loops increase OPI due to reuse of tiles of A out of the L2 cache and tiles of B out of the L3 cache:
 ```
