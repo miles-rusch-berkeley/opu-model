@@ -37,6 +37,29 @@ where the register and cache tile dimensions $n_r$, $m_r$, $k_c$ correspond to o
 
 The micro kernel at the bottom of the above figure can be written as follows:  
 ```
+mat c = mld(C[m:mr, n:nr]);
+for (int k = 0; k < kc;  k ++) {
+    mat a = mld(A[k]);
+    mat b = mld(B[k]);
+    c = opacc(c, a ,b)
+}
+```
+and has a OPI=$v_l$.
+
+The first loop increases OPI due to reuse of A out of the L2 cache:
+```
+for (int m = mo; m < mo+mc; m += mr) {
+    mat b = mld(B[k:kl,n:nr]);
+    for (int k = ko; k < ko+kl;  k += kl) {
+        mat a = mld(A[m:mr,ko:kl]);
+        mat c = mld(C[m:mr, n:nr]);
+        c = opacc(c, a ,b)
+}   }
+```
+now OPI=$\frac{k_c m_c v_l}{k_c(m_c+v_l)}=\frac{m_c v_l}{m_c+v_l}$. 
+
+Similarly, for the outermost loops that store larger tiles in cache, the OPI=$\frac{m_c n_c}{m_c+n_c}$. 
+```
 for (int ko = 0; ko < K; ko += kc) {
     // L3$ prefetch B[ko:kc,0:N]
     for (int mo = 0; mo < M; mo += mc) {

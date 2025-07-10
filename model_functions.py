@@ -1,4 +1,5 @@
 # See LICENSE.TT for license details.
+from matplotlib._api import check_getitem
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -101,9 +102,8 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     a_blas = kc * mc*databits/8
     # 2nd loop over N
     iN = math.ceil(N/vl)
-    c_blas = mc * vlB*widen/kl**2
-    mem_lds = iKc*(b_blas + iMc*(a_blas + iN*c_blas))
-    blas_mem_opi = N*M*K/mem_lds
+    c_tile = mc * vlB*widen/kl**2
+    mem_lds = iKc*(b_blas + iMc*(a_blas + iN*c_tile))
     # 1st loop over mc
     iMi = math.ceil(mc/ml)
     # 0th loop over kc
@@ -116,13 +116,15 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     # 2nd loop over N
     iN = math.ceil(N/vl)
     b_tile = K * vlB
-    c_tile = mc * vlB*widen/kl**2
     # 1st loop over M
     mem_lds = iMc*(a_tile + iN*iMi*b_tile)
-    nmk_mem_opi = N*M*K/mem_lds
     # 0th loop over K
     t_nmk = iMc * iN * iMi * t_eff_opacc 
     nmk_mem_bw = mem_lds/t_nmk
+
+    #ukernel opc
+    mrf_opi = num_mregs*vl*ml/kl**2/((num_mregs/2)*vl + 2*ml) if (num_mregs%2==0) else num_mregs*vl*ml/kl**2/(num_mregs*vl + ml)
+    l2_opi = N * mc / (N + mc)
 
     # Matrix REGFILE
     # ms_a = kl * mlB
@@ -138,6 +140,7 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     vrf = 82740
     opu = 898150
     mrf_byte = 256/4 * (8/32)
+    macc_byte = 250
     l2_cache_128kB = 2*68590
     # l2_cache_512kB = 550*475 / 512
     
@@ -149,10 +152,9 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     vpu_area = (rvv - opu - vrf)*(vlB*width_datapath/32) + vrf*(vlB/64) + scalar_area
     # extrapolate to matrix area
     mrf_area = mrf_byte * mrf_capacity
-    num_cells = (vl*width_datapath) * (ml*width_datapath) / kl
-    num_cells_syn = 32*32
-    mrf_syn = mrf_byte * (4*num_cells_syn)
-    opacc_area = (opu - mrf_syn) * (num_cells/num_cells_syn) * (databits/8)**2
+    num_maccs = (vl*width_datapath) * (ml*width_datapath) / kl
+    shift_area = mrf_byte * (databits/8) * widen * num_maccs
+    opacc_area = macc_byte * (databits/8)**2 * num_maccs + shift_area
     opu_area =  l2_area + vpu_area + mrf_area + opacc_area
     # print('vlB/width_datapath/32', vlB*width_datapath/32)
     # print('(vlB/64)',vlB/64)
@@ -176,9 +178,9 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
         'l3_blas': l3_blas,
         'l3_nmk': l3_nmk,
         'nmk_mem_bw': nmk_mem_bw,
-        'nmk_mem_opi': nmk_mem_opi,
         'blas_mem_bw': blas_mem_bw,
-        'blas_mem_opi': blas_mem_opi,
+        'mrf_opi': mrf_opi,
+        'l2_opi': l2_opi,
         'mrf_bw': mrf_bw,
         
         'mrf_area': mrf_area,
@@ -202,7 +204,7 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
     df_columns = ['t_uk', 'util',
                   'ops_cycle', 'max_mregs', 'max_mrf_capacity',
                   'blas_mem_bw', 'nmk_mem_bw', 'mrf_bw', 
-                  'blas_mem_opi', 'nmk_mem_opi',
+                  'l2_opi', 'mrf_opi',
                   'mrf_capacity', 'l3_blas', 'l3_nmk',
                   'speedup_vec', 'vpu_area',
                   'opacc_area', 'mrf_area', 'opu_area']
@@ -223,9 +225,9 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
         df.loc[idx, 'l3_blas'] = perf_specs['l3_blas']
         df.loc[idx, 'l3_nmk'] = perf_specs['l3_nmk']
         df.loc[idx, 'nmk_mem_bw'] = perf_specs['nmk_mem_bw']
-        df.loc[idx, 'nmk_mem_opi'] = perf_specs['nmk_mem_opi']
         df.loc[idx, 'blas_mem_bw'] = perf_specs['blas_mem_bw']
-        df.loc[idx, 'blas_mem_opi'] = perf_specs['blas_mem_opi']
+        df.loc[idx, 'l2_opi'] = perf_specs['l2_opi']
+        df.loc[idx, 'mrf_opi'] = perf_specs['mrf_opi']
 
         df.loc[idx, 'mrf_bw'] = perf_specs['mrf_bw']
         df.loc[idx, 'mrf_capacity'] = perf_specs['mrf_capacity']
