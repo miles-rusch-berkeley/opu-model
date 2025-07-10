@@ -46,7 +46,7 @@ for (int k = 0; k < kc;  k ++) {
 ```
 and has a OPI=$v_l$.
 
-The first loop increases OPI due to reuse of A out of the L2 cache:
+The first loop utilizes all of the MRF tile registers by performing one micro-kernel for each tile register:
 ```
 for (int m = mo; m < mo+mc; m += mr) {
     mat b = mld(B[k:kl,n:nr]);
@@ -56,9 +56,9 @@ for (int m = mo; m < mo+mc; m += mr) {
         c = opacc(c, a ,b)
 }   }
 ```
-now OPI=$\frac{k_c m_c v_l}{k_c(m_c+v_l)}=\frac{m_c v_l}{m_c+v_l}$. 
+this increases the accumulator storage to $m_c v_l$ where $m_c$ is the storage available using all tile registers. Now OPI=$\frac{k_c m_c v_l}{k_c(m_c+v_l)}=\frac{m_c v_l}{m_c+v_l}$. If there are an even number of tile registers, the OPI can be increased by forming a 2x$\frac{m_c}{2}$ (instead of a 1x$m_c$ ash shown in the 1st loop of the above figure). For example, with $4n_r$ tile registers we can form a $2 n_r v_l$ x $2 n_r v_l$ tile of C, acheiving OPI = $n_r v_l$.
 
-Similarly, for the outermost loops that store larger tiles in cache, the OPI=$\frac{m_c n_c}{m_c+n_c}$. 
+Similarly, the outermost loops increase OPI due to reuse of tiles of A out of the L2 cache and tiles of B out of the L3 cache:
 ```
 for (int ko = 0; ko < K; ko += kc) {
     // L3$ prefetch B[ko:kc,0:N]
@@ -219,7 +219,7 @@ $BW_{mem} = \frac{2(k_c + m_l)}{\max(m_l, k_c)}$ vector loads per cycle,
 
 We have discussed some design points in which the performance metrics have simple expressions. This model estimates the performance metrics over arbitrary matrix dimensions K, M, N, datatype, number of matrix registers, and instruction parameters such as $v_l$, $m_l$, and $k_c$. The model also includes dependence on micro-architectural parameters such as cache size, buffering, etc.
 
-For example usage, see dataflow_model.ipynb
+For example usage, see jupyter notebooks (.ipynb)
 
 ## Reference
 [1] F. G. Van Zee and T. M. Smith, “Implementing high-performance complex matrix multiplication,” ACM Transactions on Mathematical Software, 2016

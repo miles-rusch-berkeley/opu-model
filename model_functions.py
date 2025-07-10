@@ -34,23 +34,25 @@ def area_utilization(M, N, K, ml, vl, kl):
 
 def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, t_op_ind, widen, width_datapath):
     """
-    From software parameters
+    From software parameters:
         databits: number of bits per vector element 
         widen: widening factor between input and output elements
+    and microarchitecture parameters:
         t_mem: memory latency,  
-    and microarchitecture parameters
-        num_regs: number of 2D matrix registers
-        vlB, mlB: bytes per vector, vectors per matrix register
+        num_mregs: number of 2D matrix registers
+        vlB: bytes per vector
+        vl_ml: vl/ml, where ml is number of vectors per matrix register
         kl: number of outer product operations accumulated per instruction,
         t_op_ind: select functional unit latency
         width_datapath: half width reduces bw and increases latency both by a factor of four
         'l2_size': cache size in KB,
-    Calculate 
+    Calculate model outputs:
         'mem_bw': average memory bandwidth for outer product BLAS schedule,
         'mrf_bw': matrix register file bandwidth
         't_uk': ukernel latency,
         'ops_cycle': macc operations per cycle,
         'mrf_capacity': matrix register file capacity
+        'util': macc array utilization over ukernel
     """
     mlB = vlB / vl_ml
     ml = mlB/(databits/8) #num MMU rows equals number of elements ml
@@ -79,7 +81,7 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     p_l2 = t_uk/t_crit
     max_mregs = math.ceil(p_l2)
     # effective ukernel latency given memory latency
-    lsu_buffer = 4
+    lsu_buffer = 1
     p_mrf = lsu_buffer * num_mregs/(databits/8)
     t_eff_opacc = max(t_uk/p_mrf, t_crit)
     
@@ -109,43 +111,28 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     # 0th loop over kc
     t_blas = iKc * iMc * iN * iMi * t_eff_opacc
     blas_mem_bw = mem_lds/t_blas
-    
-    # NMK schedule
-    # 3rd loop over M
-    a_tile = K * mc*databits/8
-    # 2nd loop over N
-    iN = math.ceil(N/vl)
-    b_tile = K * vlB
-    # 1st loop over M
-    mem_lds = iMc*(a_tile + iN*iMi*b_tile)
-    # 0th loop over K
-    t_nmk = iMc * iN * iMi * t_eff_opacc 
-    nmk_mem_bw = mem_lds/t_nmk
 
-    #ukernel opc
+    #ukernel op intensity (opi) [ops/load]
     mrf_opi = num_mregs*vl*ml/kl**2/((num_mregs/2)*vl + 2*ml) if (num_mregs%2==0) else num_mregs*vl*ml/kl**2/(num_mregs*vl + ml)
     l2_opi = N * mc / (N + mc)
 
     # Matrix REGFILE
-    # ms_a = kl * mlB
-    # ms_b = kl * vlB
     md_c = ml * vlB*widen / kl**2
     mrf_bw = (c_tile + kc*(mlB + vlB))/t_eff_opacc
     max_mrf_capacity = max_mregs*c_tile
     mrf_capacity = num_mregs*md_c
 
     #from syn [um^2]
-    shuttle = 1764000
-    rvv = 1373300
-    vrf = 82740
-    opu = 898150
-    mrf_byte = 256/4 * (8/32)
-    macc_byte = 250
-    l2_cache_128kB = 2*68590
-    # l2_cache_512kB = 550*475 / 512
+    top = 1764000   # total area
+    rvv = 1373300   # vector backend area
+    vrf = 82740     # vector register file area
+    opu = 898150    # outer product unit area 
+    mrf_byte = 256/4 * (8/32)   # 8-bit register area
+    macc_byte = 250             # 8-bit MACC area
+    l2_cache_128kB = 2*68590    # L2 cache area
     
     # scalar frontend area
-    scalar_area = shuttle - rvv - l2_cache_128kB
+    scalar_area = top - rvv - l2_cache_128kB
     #local vector cache area
     l2_area = l2_cache_128kB/128 * l2_cache
     # extrapolate to vector area
@@ -156,10 +143,6 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
     shift_area = mrf_byte * (databits/8) * widen * num_maccs
     opacc_area = macc_byte * (databits/8)**2 * num_maccs + shift_area
     opu_area =  l2_area + vpu_area + mrf_area + opacc_area
-    # print('vlB/width_datapath/32', vlB*width_datapath/32)
-    # print('(vlB/64)',vlB/64)
-    # print(vpu_area)
-
     
     #performance opu vs vpu
     t_vec_crit = 1 + kc*ml/width_datapath
@@ -177,7 +160,6 @@ def dataflow_model(databits, t_mem, M,N,K, l2_cache, kl, vlB, vl_ml, num_mregs, 
         'max_mrf_capacity': max_mrf_capacity/2**10, # [kB]
         'l3_blas': l3_blas,
         'l3_nmk': l3_nmk,
-        'nmk_mem_bw': nmk_mem_bw,
         'blas_mem_bw': blas_mem_bw,
         'mrf_opi': mrf_opi,
         'l2_opi': l2_opi,
@@ -203,7 +185,7 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
     # Create columns of  DataFrame 
     df_columns = ['t_uk', 'util',
                   'ops_cycle', 'max_mregs', 'max_mrf_capacity',
-                  'blas_mem_bw', 'nmk_mem_bw', 'mrf_bw', 
+                  'blas_mem_bw', 'mrf_bw', 
                   'l2_opi', 'mrf_opi',
                   'mrf_capacity', 'l3_blas', 'l3_nmk',
                   'speedup_vec', 'vpu_area',
@@ -211,12 +193,9 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
     df = pd.DataFrame(index=df_index, columns=df_columns,dtype=float)
 
     #compute performance specs
-    # idxs = pd.MultiIndex.from_product(index_space, names=index_labels)
     for idx in tqdm(df_index, disable=True):
         perf_specs = dataflow_model(*idx)
         df.loc[idx, 't_uk'] = perf_specs['t_uk']
-        # df.loc[idx, 'util_a'] = perf_specs['util_a']
-        # df.loc[idx, 'util_t'] = perf_specs['util_t']
         df.loc[idx, 'util'] = perf_specs['util']
         df.loc[idx, 'ops_cycle'] = perf_specs['ops_cycle']
         
@@ -224,7 +203,6 @@ def generate_df(databits, t_mem, M,N,K, l2_cache, kl, vlB, mlB, num_mregs, t_op,
         df.loc[idx, 'max_mrf_capacity'] = perf_specs['max_mrf_capacity']
         df.loc[idx, 'l3_blas'] = perf_specs['l3_blas']
         df.loc[idx, 'l3_nmk'] = perf_specs['l3_nmk']
-        df.loc[idx, 'nmk_mem_bw'] = perf_specs['nmk_mem_bw']
         df.loc[idx, 'blas_mem_bw'] = perf_specs['blas_mem_bw']
         df.loc[idx, 'l2_opi'] = perf_specs['l2_opi']
         df.loc[idx, 'mrf_opi'] = perf_specs['mrf_opi']
